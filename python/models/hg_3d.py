@@ -1,4 +1,4 @@
-from .layers.Residual import Residual
+from .Residual import Residual
 import torch.nn as nn
 import math
 import ref

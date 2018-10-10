@@ -24,6 +24,7 @@ from datasets.fusion import Fusion
 from datasets.h36m import H36M
 from datasets.mpii import MPII
 from models.FusionCriterion import FusionCriterion
+from utils.eval import Accuracy, getPreds, MPJPE
 import ref
 
 model_names = sorted(name for name in models.__dict__
@@ -31,8 +32,8 @@ model_names = sorted(name for name in models.__dict__
     and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR',
-                    help='path to dataset')
+#parser.add_argument('data', metavar='DIR',
+#                    help='path to dataset')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
                     choices=model_names,
                     help='model architecture: ' +
@@ -62,7 +63,7 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 parser.add_argument('--world-size', default=1, dest='world_size', type=int,
                     help='number of distributed processes')
-parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', dest='dist-url' type=str,
+parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', dest='dist-url', type=str,
                     help='url used to set up distributed training')
 parser.add_argument('--dist-backend', default='gloo', type=str,
                     help='distributed backend')
@@ -84,6 +85,10 @@ parser.add_argument('-regWeight', type = float,
                     default = 0, help = 'depth regression loss weight')
 parser.add_argument('-varWeight', type = float, 
                     default = 0, help = 'variance loss weight')
+parser.add_argument('-ratio3D', type = int, 
+                    default = 0, help = 'weak label data ratio')
+
+
 
 global args, best_prec1
 args = parser.parse_args()
@@ -116,8 +121,9 @@ if args.distributed:
 #else:
 #    print("=> creating model '{}'".format(args.arch))
 #    model = models.__dict__[args.arch]()
-
-model = HourglassNet3D(args.nStack, args.nModules, args.nFeats, args.nRegModules)
+print('Creat model')
+model = HourglassNet3D(args.nStack, args.nModules, args.nFeats, args.nRegModules).cuda()
+print(model)
 
 if args.gpu is not None:
     model = model.cuda(args.gpu)
@@ -131,7 +137,7 @@ else:
     else:
         model = torch.nn.DataParallel(model).cuda()
 
-
+print('Loss function')
 # define loss function (criterion) and optimizer
 #criterion = nn.CrossEntropyLoss().cuda(args.gpu)
 criterion = nn.MSELoss().cuda(args.gpu)
@@ -219,6 +225,7 @@ def train(epoch):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    Loss, Acc, Mpjpe, Loss3D = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
 
     # switch to train mode
     model.train()
@@ -248,8 +255,14 @@ def train(epoch):
         #losses.update(loss.item(), input.size(0))
         #top1.update(prec1[0], input.size(0))
         #top5.update(prec5[0], input.size(0))
-        loss = FusionCriterion(args.regWeight, args.varWeight)(reg, target3D_var)
-        Loss3D.update(loss.data[0], input.size(0))
+        #print(reg)
+        #print(reg.float())
+        #print(reg.type(torch.FloatTensor))
+        reg = reg.float().cuda()
+        #print(reg.type())
+        #loss = FusionCriterion(args.regWeight, args.varWeight)(reg, target3D_var)
+        #Loss3D.update(loss.data[0], input.size(0))
+        loss = 0
         for k in range(args.nStack):
             loss += criterion(output[k], target2D_var)
 
@@ -280,7 +293,7 @@ def train(epoch):
                   'Mpjpe {mpjpe.val:.3f} ({mpjpe.avg:.3f})\t'
                   'Loss3d {loss3d.val:.3f} ({loss3d.avg:.3f})\t'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
-                   data_time=data_time, loss=loss_train, acc=acc_train, mpjpe=mpjpe_train, loss3d=loss3d_train))
+                   data_time=data_time, loss=Loss, acc=Acc, mpjpe=Mpjpe, loss3d=Loss3D))
         
 
 
@@ -379,7 +392,7 @@ def accuracy(output, target, topk=(1,)):
 
 if __name__ == '__main__':
 
-	for epoch in range(args.start_epoch, args.epochs):
+    for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch)

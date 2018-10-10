@@ -6,10 +6,12 @@ from h5py import File
 import cv2
 from utils.utils import Rnd, Flip, ShuffleLR
 from utils.img import Crop, DrawGaussian, Transform
+import json
+
 
 class MPII(data.Dataset):
   def __init__(self, opt, split, returnMeta = False):
-    print '==> initializing 2D {} data.'.format(split)
+    print('==> initializing 2D {} data.'.format(split))
     """
     annot = {}
     tags = ['imgname','part','center','scale']
@@ -19,6 +21,7 @@ class MPII(data.Dataset):
     f.close()
     """
     # create train/val split
+    jsonfile = '/p300/2019-CVPR-Pose/datasets/mpii_annotations.json'
     with open(jsonfile) as anno_file:   
         self.annot = json.load(anno_file)
 
@@ -29,7 +32,7 @@ class MPII(data.Dataset):
         else:
           self.train.append(idx)
 
-    print 'Loaded 2D {} {} samples'.format(split, len(self.train))
+    print('Loaded 2D {} {} samples'.format(split, len(self.train)))
     
     self.split = split
     self.opt = opt
@@ -59,6 +62,7 @@ class MPII(data.Dataset):
     pts = torch.Tensor(a['joint_self'])
     c = torch.Tensor(a['objpos'])
     s = a['scale_provided']
+    s = s * 200
     r = 0
     
     if self.split == 'train':
@@ -93,7 +97,7 @@ class MPII(data.Dataset):
     
   def __len__(self):
     #return len(self.annot['scale'])
-    if self.is_train:
+    if self.split == 'train':
       return len(self.train)
     else:
       return len(self.valid)
